@@ -96,7 +96,7 @@ class Drivetrain:
         self.change_target_rotation(Motor.LEFT, rotations)
         self.change_target_rotation(Motor.RIGHT, -rotations)
 
-    def is_at_target(self, tolerance_ticks=15):
+    def is_at_target(self, tolerance_ticks=50):
         left_pos = self.get_encoder(Motor.LEFT)
         right_pos = self.get_encoder(Motor.RIGHT)
         

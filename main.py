@@ -1,5 +1,6 @@
 import time
 from drivetrain import Drivetrain, Motor
+import _thread
 
 print("Initializing Drivetrain...")
 
@@ -24,9 +25,17 @@ drivetrain = Drivetrain(k_constants)
 
 def run_until_target():
     while not drivetrain.is_at_target():
+        time.sleep(0.05)
+
+def pid_loop():
+    while True:
         drivetrain.update_pid()
+        time.sleep(0.05)
 
 try:
+
+    thread = _thread.start_new_thread(pid_loop, ())
+    print("thread started")
     drivetrain.move_cm(30.48)
     run_until_target()
     drivetrain.turn_degrees(90)
