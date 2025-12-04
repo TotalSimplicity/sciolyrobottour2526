@@ -1,6 +1,7 @@
 import math
 from micropython import const
 from motor_driver import MotorDriver
+import time
 
 class Motor:
     LEFT = const(2)
@@ -17,7 +18,7 @@ class Drivetrain:
         self.driver = MotorDriver()
         
         self.wheel_diameter_cm = 4.3
-        self.track_width_cm = 6.4    # CHANGE!!
+        self.track_width_cm = 16    # CHANGE!!
         
         #self.ticks_per_rev = 14 * 20.4 * 4
         self.ticks_per_rev = 1067
@@ -63,6 +64,7 @@ class Drivetrain:
             return pos
         else:
             raise ValueError("Invalid motor specified.")
+        
 
     def stop(self):
         self.driver.set_motor_power(0, 0)
@@ -93,6 +95,18 @@ class Drivetrain:
         
         self.change_target_rotation(Motor.LEFT, rotations)
         self.change_target_rotation(Motor.RIGHT, -rotations)
+
+    def is_at_target(self, tolerance_ticks=15):
+        left_pos = self.get_encoder(Motor.LEFT)
+        right_pos = self.get_encoder(Motor.RIGHT)
+        
+        left_error = abs(self.target_ticks_left - left_pos)
+        right_error = abs(self.target_ticks_right - right_pos)
+        
+        if left_error <= tolerance_ticks and right_error <= tolerance_ticks:       
+            time.sleep(1)
+            return True
+        return False
 
     def set_target_rotations(self, left_rotations, right_rotations):
         current_left = self.get_encoder(Motor.LEFT)

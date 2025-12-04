@@ -4,8 +4,10 @@ from drivetrain import Drivetrain, Motor
 print("Initializing Drivetrain...")
 
 kc = 14
-period_oscillation = 1
+period_oscillation = 1 #def wrong
 
+
+# Ziegler-Nichols stuff
 kp = kc*0.5
 # ki = 2*(kp/period_oscillation)
 # kd = kp * (period_oscillation/8)
@@ -20,9 +22,16 @@ k_constants = {
 
 drivetrain = Drivetrain(k_constants)
 
+def run_until_target():
+    while not drivetrain.is_at_target():
+        drivetrain.update_pid()
+
 try:
-    drivetrain.set_target_rotation(Motor.LEFT, 1)   # 5 rotations forward
-    drivetrain.set_target_rotation(Motor.RIGHT, 1)  # 5 rotations forward
+    drivetrain.move_cm(30.48)
+    run_until_target()
+    drivetrain.turn_degrees(90)
+    run_until_target()
+    drivetrain.move_cm(30.48)
 
     while True:
         drivetrain.update_pid()
