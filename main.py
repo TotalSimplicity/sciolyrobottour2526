@@ -2,11 +2,27 @@ import time
 from drivetrain import Drivetrain, Motor
 
 print("Initializing Drivetrain...")
-drivetrain = Drivetrain()
+
+kc = 14
+period_oscillation = 1
+
+kp = kc*0.5
+# ki = 2*(kp/period_oscillation)
+# kd = kp * (period_oscillation/8)
+ki = 0
+kd = 0
+
+k_constants = {
+    'kp': kp,
+    'ki': ki,
+    'kd': kd
+}
+
+drivetrain = Drivetrain(k_constants)
 
 try:
-    print("Setting Target: 5 Rotations Forward...")
-    drivetrain.move_cm(50)
+    drivetrain.set_target_rotation(Motor.LEFT, 1)   # 5 rotations forward
+    drivetrain.set_target_rotation(Motor.RIGHT, 1)  # 5 rotations forward
 
     while True:
         drivetrain.update_pid()

@@ -13,18 +13,19 @@ class Drivetrain:
     rightEncoderReversed = True
     leftEncoderReversed = False
 
-    def __init__(self):
+    def __init__(self, k_constants: dict):
         self.driver = MotorDriver()
         
         self.wheel_diameter_cm = 4.3
-        self.track_width_cm = 14.5    # CHANGE!!
+        self.track_width_cm = 6.4    # CHANGE!!
         
-        self.ticks_per_rev = 14 * (30613 / 1500)
+        #self.ticks_per_rev = 14 * 20.4 * 4
+        self.ticks_per_rev = 1067
         
         # PID Constants
-        self.kp = 4
-        self.ki = 0.0
-        self.kd = 5
+        self.kp = k_constants.get('kp', 0)
+        self.ki = k_constants.get('ki', 0)
+        self.kd = k_constants.get('kd', 0)
         
         self.target_ticks_left = 0
         self.target_ticks_right = 0
