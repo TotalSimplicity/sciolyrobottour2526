@@ -3,31 +3,26 @@ from machine import Pin, I2C
 import time
 
 class MotorDriver:
-    # Register Definitions
     ADDR = 0x26
     PWM_CONTROL_REG = 0x07
     ENCODER_TOTAL_BASE_REG = 0x20 
 
-    # Hardcoded I2C as requested (Note: SoftI2C is often more stable for batteries)
     i2c = I2C(0, scl=Pin(13), sda=Pin(12), freq=100000)
 
-    # Internal state to remember motor speeds
     m1power = 0
     m2power = 0
     m3power = 0
     m4power = 0
 
-    # Store offsets for the "Reset" function
+    # Store offsets for reset fun
     offsets = [0, 0, 0, 0]
 
     def __init__(self):
         try:
             self.set_motor_power(0, 0)
-            # Optional: Reset encoders to 0 on startup
             self.reset_encoder(0)
         except:
             print("ERROR IN MOTOR_DRIVER.py - Check Wiring or Battery")
-            # Blink LED error loop
             while True:
                 led = Pin(25, Pin.OUT)
                 led.value(1)
@@ -47,7 +42,6 @@ class MotorDriver:
         motor_number: 1-4 for specific motor, 0 (or others) for ALL motors.
         power: -1000 to 1000
         """
-        # Update internal state
         if motor_number == 1:
             self.m1power = power
         elif motor_number == 2:
@@ -57,13 +51,11 @@ class MotorDriver:
         elif motor_number == 4:
             self.m4power = power
         else:
-            # If number is not 1-4, set ALL motors
             self.m1power = power
             self.m2power = power
             self.m3power = power
             self.m4power = power
 
-        # Clamp values to -1000 to 1000
         m1 = max(min(self.m1power, 1000), -1000)
         m2 = max(min(self.m2power, 1000), -1000)
         m3 = max(min(self.m3power, 1000), -1000)
@@ -78,9 +70,6 @@ class MotorDriver:
         self._write(self.PWM_CONTROL_REG, pwms)
 
     def _read_raw_encoder(self, motor_id):
-        """
-        Internal helper: Reads the actual hardware register value.
-        """
         if motor_id < 1 or motor_id > 4:
             return 0
 
@@ -102,29 +91,18 @@ class MotorDriver:
         return encoder_val
 
     def reset_encoder(self, motor_id=0):
-        """
-        Sets the current encoder position to 0.
-        motor_id: 1-4 for specific motor, 0 for ALL motors.
-        """
         if motor_id == 0:
-            # Reset all
             for i in range(1, 5):
                 self.offsets[i-1] = self._read_raw_encoder(i)
         elif 1 <= motor_id <= 4:
-            # Reset specific
             self.offsets[motor_id-1] = self._read_raw_encoder(motor_id)
 
     def get_encoder(self, motor_id):
-        """
-        Reads the encoder value relative to the last reset.
-        """
         if motor_id < 1 or motor_id > 4:
             return 0
         
-        # Get raw hardware value
         raw_val = self._read_raw_encoder(motor_id)
         
-        # Return value adjusted by the offset
         return raw_val - self.offsets[motor_id-1]
 
     def stop(self):
