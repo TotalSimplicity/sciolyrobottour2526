@@ -29,6 +29,12 @@ class MotorDriver:
                 time.sleep(0.5)
                 led.value(0)
                 time.sleep(0.5)
+                try:
+                    self.set_motor_power(0, 0)
+                    break
+                except:
+                    print("retrying")
+                
 
     def _write(self, reg, data):
         self.i2c.writeto_mem(self.ADDR, reg, bytearray(data))
