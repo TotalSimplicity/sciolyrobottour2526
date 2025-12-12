@@ -9,7 +9,7 @@ period_oscillation = 1 #def wrong
 
 
 # Ziegler-Nichols stuff
-kp = kc*0.5
+kp = kc*0.25
 # ki = 2*(kp/period_oscillation)
 # kd = kp * (period_oscillation/8)
 ki = 0
@@ -24,16 +24,27 @@ k_constants = {
 drivetrain = Drivetrain(k_constants)
 
 def run_until_target():
-    while not drivetrain.is_at_target():
+    while True:
+        try:
+            if drivetrain.is_at_target():
+                break
+        except Exception as e:
+            print("run until target encoder read error")
+            print(e)
+            continue;
         time.sleep(0.05)
 
 def pid_loop():
     while True:
         drivetrain.update_pid()
-        time.sleep(0.05)
+        time.sleep(0.02)
 
 try:
-
+    # drivetrain.set_motor_power(Motor.LEFT, 500)
+    # print(drivetrain.get_encoder(Motor.LEFT))
+    # time.sleep(4)
+    # print(drivetrain.get_encoder(Motor.LEFT))
+    # time.sleep(3)
     thread = _thread.start_new_thread(pid_loop, ())
     print("thread started")
     drivetrain.move_cm(30.48)
@@ -45,8 +56,11 @@ try:
     while True:
         drivetrain.update_pid()
 
-        left_pos = drivetrain.get_encoder(Motor.LEFT)
-        right_pos = drivetrain.get_encoder(Motor.RIGHT)
+        try:
+            left_pos = drivetrain.get_encoder(Motor.LEFT)
+            right_pos = drivetrain.get_encoder(Motor.RIGHT)
+        except:
+            print("error checking encoders")
         
         l_target = int(drivetrain.target_ticks_left)
         r_target = int(drivetrain.target_ticks_right)
@@ -56,7 +70,7 @@ try:
         # Loop frequency: 0.05s = 20Hz (Good speed for PID)
         time.sleep(0.05)
 
-except KeyboardInterrupt:
+except:
     print("\nStopping...")
     try:
         drivetrain.stop()

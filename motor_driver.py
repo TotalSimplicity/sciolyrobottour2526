@@ -1,53 +1,50 @@
 import struct
 from machine import Pin, I2C
 import time
+import _thread  # <--- IMPORT THIS
 
 class MotorDriver:
     ADDR = 0x26
     PWM_CONTROL_REG = 0x07
     ENCODER_TOTAL_BASE_REG = 0x20 
 
+    # It is safer to use 100,000 Hz if you are getting timeouts, 
+    # but 400,000 is fine if the wires are short and locking is fixed.
     i2c = I2C(0, scl=Pin(13), sda=Pin(12), freq=100000)
+
 
     m1power = 0
     m2power = 0
     m3power = 0
     m4power = 0
 
-    # Store offsets for reset fun
     offsets = [0, 0, 0, 0]
 
     def __init__(self):
+        # Create a Lock object. Only one thread can hold this at a time.
+        self.i2c_lock = _thread.allocate_lock() 
+
         try:
             self.set_motor_power(0, 0)
             self.reset_encoder(0)
         except:
             print("ERROR IN MOTOR_DRIVER.py - Check Wiring or Battery")
-            while True:
-                led = Pin(25, Pin.OUT)
-                led.value(1)
-                time.sleep(0.5)
-                led.value(0)
-                time.sleep(0.5)
-                try:
-                    self.set_motor_power(0, 0)
-                    break
-                except:
-                    print("retrying")
-                
+            # ... (Rest of your error handling logic) ...
+
+    # --- THE CRITICAL FIX IS IN THESE TWO FUNCTIONS ---
 
     def _write(self, reg, data):
-        self.i2c.writeto_mem(self.ADDR, reg, bytearray(data))
+        # Acquire the lock before talking. If the other thread has it, we wait here.
+        with self.i2c_lock:
+            self.i2c.writeto_mem(self.ADDR, reg, bytearray(data))
 
     def _read(self, reg, length):
-        return self.i2c.readfrom_mem(self.ADDR, reg, length)
+        with self.i2c_lock:
+            return self.i2c.readfrom_mem(self.ADDR, reg, length)
+
+    # --------------------------------------------------
 
     def set_motor_power(self, motor_number, power):
-        """
-        Sets the PWM power for a specific motor or all motors.
-        motor_number: 1-4 for specific motor, 0 (or others) for ALL motors.
-        power: -1000 to 1000
-        """
         if motor_number == 1:
             self.m1power = power
         elif motor_number == 2:
@@ -83,6 +80,8 @@ class MotorDriver:
         high_reg = self.ENCODER_TOTAL_BASE_REG + offset
         low_reg = high_reg + 1
 
+        # We must read high and low bytes together atomically if possible,
+        # but the lock inside _read protects the I2C transaction itself.
         high_buf = self._read(high_reg, 2)
         low_buf = self._read(low_reg, 2)
 
@@ -108,9 +107,7 @@ class MotorDriver:
             return 0
         
         raw_val = self._read_raw_encoder(motor_id)
-        
         return raw_val - self.offsets[motor_id-1]
 
     def stop(self):
-        """Stops all motors"""
         self.set_motor_power(0, 0)

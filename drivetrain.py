@@ -8,11 +8,13 @@ class Motor:
     RIGHT = const(1)
 
 class Drivetrain:
-    rightMotorReversed = False
-    leftMotorReversed = True
+    rightMotorReversed = True
+    leftMotorReversed = False
 
     rightEncoderReversed = True
     leftEncoderReversed = False
+
+    MAX_POWER = 500
 
     def __init__(self, k_constants: dict):
         self.driver = MotorDriver()
@@ -37,7 +39,11 @@ class Drivetrain:
         self.integral_left = 0
         self.integral_right = 0
 
+    def _clamp_power(self, power: int) -> int:
+        return max(min(int(power), self.MAX_POWER), -self.MAX_POWER)
+
     def set_motor_power(self, motor, power: int):
+        power = self._clamp_power(power)
         if motor == Motor.LEFT:
             if self.leftMotorReversed:
                 power = -power
@@ -48,6 +54,7 @@ class Drivetrain:
             self.driver.set_motor_power(2, power)
 
     def set_motor_powers(self, power):
+        power = self._clamp_power(power)
         self.set_motor_power(Motor.LEFT, power)
         self.set_motor_power(Motor.RIGHT, power)
 
@@ -145,8 +152,12 @@ class Drivetrain:
         self.integral_right = 0
 
     def update_pid(self):
-        current_left = self.get_encoder(Motor.LEFT)
-        current_right = self.get_encoder(Motor.RIGHT)
+        try:
+            current_left = self.get_encoder(Motor.LEFT)
+            current_right = self.get_encoder(Motor.RIGHT)
+        except:
+            print("pid - error reading encoders")
+            return
 
         error_left = self.target_ticks_left - current_left
         error_right = self.target_ticks_right - current_right
@@ -160,8 +171,13 @@ class Drivetrain:
         power_left = (error_left * self.kp) + (self.integral_left * self.ki) + (derivative_left * self.kd)
         power_right = (error_right * self.kp) + (self.integral_right * self.ki) + (derivative_right * self.kd)
 
-        self.set_motor_power(Motor.LEFT, int(power_left))
-        self.set_motor_power(Motor.RIGHT, int(power_right))
+        try:
+            self.set_motor_power(Motor.LEFT, int(power_left))
+            self.set_motor_power(Motor.RIGHT, int(power_right))
+        except:
+            print("pid - error setting motor power")
+            return
 
         self.last_error_left = error_left
         self.last_error_right = error_right
+        print(f"{current_left}L, {current_right}R")
