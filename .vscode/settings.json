@@ -11,6 +11,9 @@
         "~/.micropico-stubs/included"
     ],
     "python.analysis.extraPaths": [
-        "~/.micropico-stubs/included"
-    ]
+        "",
+        "/home/lkulon/.vscode/extensions/joedevivo.vscode-circuitpython-0.2.0-linux-x64/stubs",
+        "/home/lkulon/.config/Code/User/globalStorage/joedevivo.vscode-circuitpython/bundle/20251212/adafruit-circuitpython-bundle-py-20251212/lib"
+    ],
+    "circuitpython.board.version": null
 }

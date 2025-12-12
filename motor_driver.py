@@ -1,5 +1,5 @@
 import struct
-from machine import Pin, I2C
+from machine import Pin, SoftI2C
 import time
 import _thread  # <--- IMPORT THIS
 
@@ -10,7 +10,7 @@ class MotorDriver:
 
     # It is safer to use 100,000 Hz if you are getting timeouts, 
     # but 400,000 is fine if the wires are short and locking is fixed.
-    i2c = I2C(0, scl=Pin(13), sda=Pin(12), freq=100000)
+    i2c = SoftI2C(scl=Pin(19), sda=Pin(18), freq=100000)
 
 
     m1power = 0
