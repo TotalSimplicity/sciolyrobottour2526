@@ -1,5 +1,5 @@
 import struct
-from machine import Pin, I2C
+from machine import Pin, SoftI2C
 import time
 import _thread
 
