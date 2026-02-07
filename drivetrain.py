@@ -4,28 +4,28 @@ from motor_driver import MotorDriver
 import time
 
 class Motor:
-    LEFT = const(2)
-    RIGHT = const(1)
+    LEFT = const(1)
+    RIGHT = const(2)
 
 class Drivetrain:
-    rightMotorReversed = True
-    leftMotorReversed = False
-
+    # Physical Adjustments
+    rightMotorReversed = False
+    leftMotorReversed = True
     rightEncoderReversed = True
     leftEncoderReversed = False
 
-    MAX_POWER = 500
+    MAX_POWER = 1000 # Capped for safety during testing
+    MIN_POWER = 300
+    STOP_TOLERANCE = 30
+    MAX_INTEGRAL = 20000 # Anti-windup cap
 
     def __init__(self, k_constants: dict):
         self.driver = MotorDriver()
         
         self.wheel_diameter_cm = 4.3
-        self.track_width_cm = 16    # CHANGE!!
-        
-        #self.ticks_per_rev = 14 * 20.4 * 4
+        self.track_width_cm = 16 
         self.ticks_per_rev = 1067
         
-        # PID Constants
         self.kp = k_constants.get('kp', 0)
         self.ki = k_constants.get('ki', 0)
         self.kd = k_constants.get('kd', 0)
@@ -33,7 +33,6 @@ class Drivetrain:
         self.target_ticks_left = 0
         self.target_ticks_right = 0
         
-        # PID Memory
         self.last_error_left = 0
         self.last_error_right = 0
         self.integral_left = 0
@@ -45,59 +44,37 @@ class Drivetrain:
     def set_motor_power(self, motor, power: int):
         power = self._clamp_power(power)
         if motor == Motor.LEFT:
-            if self.leftMotorReversed:
-                power = -power
-            self.driver.set_motor_power(1, power)
+            if self.leftMotorReversed: power = -power
+            self.driver.set_motor_power(Motor.LEFT, power)
         elif motor == Motor.RIGHT:
-            if self.rightMotorReversed:
-                power = -power
-            self.driver.set_motor_power(2, power)
-
-    def set_motor_powers(self, power):
-        power = self._clamp_power(power)
-        self.set_motor_power(Motor.LEFT, power)
-        self.set_motor_power(Motor.RIGHT, power)
+            if self.rightMotorReversed: power = -power
+            self.driver.set_motor_power(Motor.RIGHT, power)
 
     def get_encoder(self, motor):
         if motor == Motor.LEFT:
-            pos = self.driver.get_encoder(1)
-            if self.leftEncoderReversed:
-                pos = -pos
-            return pos
+            pos = self.driver.get_encoder(Motor.LEFT)
+            return -pos if self.leftEncoderReversed else pos
         elif motor == Motor.RIGHT:
-            pos = self.driver.get_encoder(2)
-            if self.rightEncoderReversed:
-                pos = -pos
-            return pos
-        else:
-            raise ValueError("Invalid motor specified.")
-        
+            pos = self.driver.get_encoder(Motor.RIGHT)
+            return -pos if self.rightEncoderReversed else pos
+        return 0
 
     def stop(self):
         self.driver.set_motor_power(0, 0)
 
-    # --- MATH HELPERS ---
     def _cm_to_rotations(self, cm):
         circumference = self.wheel_diameter_cm * math.pi
         return cm / circumference
 
-    # --- MOVEMENT COMMANDS ---
-    
     def move_cm(self, distance_cm):
         rotations = self._cm_to_rotations(distance_cm)
         self.change_target_rotation(Motor.LEFT, rotations)
         self.change_target_rotation(Motor.RIGHT, rotations)
 
     def turn_degrees(self, degrees):
-        """
-        Rotates the robot in place.
-        Positive degrees = Turn Right (Clockwise)
-        Negative degrees = Turn Left (Counter-Clockwise)
-        """
+        # Tuning hint: If it turns too far/short, adjust track_width_cm
         turn_circumference = self.track_width_cm * math.pi
-        
         distance_cm = (degrees / 360.0) * turn_circumference
-        
         rotations = self._cm_to_rotations(distance_cm)
         
         self.change_target_rotation(Motor.LEFT, rotations)
@@ -110,46 +87,15 @@ class Drivetrain:
         left_error = abs(self.target_ticks_left - left_pos)
         right_error = abs(self.target_ticks_right - right_pos)
         
-        if left_error <= tolerance_ticks and right_error <= tolerance_ticks:       
-            time.sleep(1)
-            return True
-        return False
-
-    def set_target_rotations(self, left_rotations, right_rotations):
-        current_left = self.get_encoder(Motor.LEFT)
-        current_right = self.get_encoder(Motor.RIGHT)
-        
-        self.target_ticks_left = current_left + (left_rotations * self.ticks_per_rev)
-        self.target_ticks_right = current_right + (right_rotations * self.ticks_per_rev)
-        
-        self._reset_pid_terms()
+        # REMOVED THE SLEEP(1) - DO NOT SLEEP IN STATE CHECKS
+        return left_error <= tolerance_ticks and right_error <= tolerance_ticks
 
     def change_target_rotation(self, motor, change):
         delta_ticks = change * self.ticks_per_rev
-        
         if motor == Motor.LEFT:
             self.target_ticks_left += delta_ticks
         elif motor == Motor.RIGHT:
             self.target_ticks_right += delta_ticks
-
-    def set_target_rotation(self, motor, target):
-        current_pos = self.get_encoder(motor)
-        target_ticks = current_pos + (target * self.ticks_per_rev)
-
-        if motor == Motor.LEFT:
-            self.target_ticks_left = target_ticks
-            self.last_error_left = 0
-            self.integral_left = 0
-        elif motor == Motor.RIGHT:
-            self.target_ticks_right = target_ticks
-            self.last_error_right = 0
-            self.integral_right = 0
-
-    def _reset_pid_terms(self):
-        self.last_error_left = 0
-        self.last_error_right = 0
-        self.integral_left = 0
-        self.integral_right = 0
 
     def update_pid(self):
         try:
@@ -162,22 +108,58 @@ class Drivetrain:
         error_left = self.target_ticks_left - current_left
         error_right = self.target_ticks_right - current_right
 
+        # --- 1. Deadband / Tolerance Check ---
+        # If we are very close to the target, force error to 0 so motors relax.
+        # This prevents the robot from buzzing back and forth forever.
+        if abs(error_left) < self.STOP_TOLERANCE:
+            error_left = 0
+            self.integral_left = 0 # Optional: Reset integral to stop drift
+        
+        if abs(error_right) < self.STOP_TOLERANCE:
+            error_right = 0
+            self.integral_right = 0
+
         self.integral_left += error_left
         self.integral_right += error_right
+
+        # Integral Anti-Windup (Keep this!)
+        MAX_I = 20000 
+        self.integral_left = max(min(self.integral_left, MAX_I), -MAX_I)
+        self.integral_right = max(min(self.integral_right, MAX_I), -MAX_I)
 
         derivative_left = error_left - self.last_error_left
         derivative_right = error_right - self.last_error_right
 
-        power_left = (error_left * self.kp) + (self.integral_left * self.ki) + (derivative_left * self.kd)
-        power_right = (error_right * self.kp) + (self.integral_right * self.ki) + (derivative_right * self.kd)
+        # Calculate Raw PID output
+        raw_power_left = (error_left * self.kp) + (self.integral_left * self.ki) + (derivative_left * self.kd)
+        raw_power_right = (error_right * self.kp) + (self.integral_right * self.ki) + (derivative_right * self.kd)
 
+        # --- 2. Apply Minimum Power (Stiction Compensation) ---
+        # If the motor is supposed to move (raw_power is not 0), 
+        # boost it so it actually overcomes friction.
+        
+        power_left = 0
+        if abs(raw_power_left) > 0:
+            if raw_power_left > 0:
+                power_left = raw_power_left + self.MIN_POWER
+            else:
+                power_left = raw_power_left - self.MIN_POWER
+
+        power_right = 0
+        if abs(raw_power_right) > 0:
+            if raw_power_right > 0:
+                power_right = raw_power_right + self.MIN_POWER
+            else:
+                power_right = raw_power_right - self.MIN_POWER
+
+        # Update last error
+        self.last_error_left = error_left
+        self.last_error_right = error_right
+
+        # Send to motors (using existing set_motor_power which handles clamping)
         try:
             self.set_motor_power(Motor.LEFT, int(power_left))
             self.set_motor_power(Motor.RIGHT, int(power_right))
         except:
-            print("pid - error setting motor power")
             return
-
-        self.last_error_left = error_left
-        self.last_error_right = error_right
-        print(f"{current_left}L, {current_right}R")
+        print(f"Left Pos: {current_left}/{self.target_ticks_left}, Right Pos: {current_right}/{self.target_ticks_right}, Power L: {int(power_left)}, Power R: {int(power_right)}")

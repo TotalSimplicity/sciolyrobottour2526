@@ -4,16 +4,19 @@ import _thread
 
 print("Initializing Drivetrain...")
 
+# --- Tuning Constants ---
 kc = 14
-period_oscillation = 1 #def wrong
+period_oscillation = 1 
 
+# Ziegler-Nichols (Commented out logic handled cleanly)
+# kp = kc * 0.6  # Standard ZN
+# ki = 2 * kp / period_oscillation
+# kd = kp * period_oscillation / 8
 
-# Ziegler-Nichols stuff
-kp = kc*0.25
-# ki = 2*(kp/period_oscillation)
-# kd = kp * (period_oscillation/8)
-ki = 0
-kd = 0
+# Manual Overrides for testing
+kp = 3  # Start lower than 14, maybe 1.0 or 2.0
+ki = 0.0
+kd = 0.75  # A little damping usually helps
 
 k_constants = {
     'kp': kp,
@@ -21,58 +24,62 @@ k_constants = {
     'kd': kd
 }
 
+run_threads = True
 drivetrain = Drivetrain(k_constants)
 
 def run_until_target():
+    print("Moving...")
+    start_time = time.time()
     while True:
         try:
             if drivetrain.is_at_target():
+                print("Target reached.")
+                break
+            
+            # Timeout safety
+            if time.time() - start_time > 10: 
+                print("Timed out!")
                 break
         except Exception as e:
-            print("run until target encoder read error")
-            print(e)
-            continue;
-        time.sleep(0.05)
+            print("Encoder read error:", e)
+            continue
+        time.sleep(0.05) # Check every 50ms
 
 def pid_loop():
-    while True:
+    global run_threads
+    print("PID Thread Started")
+    while run_threads:
         drivetrain.update_pid()
-        time.sleep(0.02)
+        time.sleep(0.02) # 50Hz Loop
+    print("PID Thread exiting...")
+
+# Start the PID thread
+thread = _thread.start_new_thread(pid_loop, ())
 
 try:
-    # drivetrain.set_motor_power(Motor.LEFT, 500)
-    # print(drivetrain.get_encoder(Motor.LEFT))
-    # time.sleep(4)
-    # print(drivetrain.get_encoder(Motor.LEFT))
-    # time.sleep(3)
-    thread = _thread.start_new_thread(pid_loop, ())
-    print("thread started")
-    drivetrain.move_cm(30.48)
+    # --- Main Test Routine ---
+    print("Starting move in 2 seconds...")
+    time.sleep(2)
+    
+    # 1. Move Forward
+    drivetrain.move_cm(15)
     run_until_target()
+    time.sleep(1)
+    drivetrain.move_cm(-15)
+    run_until_target()
+    time.sleep(1)
     drivetrain.turn_degrees(90)
     run_until_target()
-    drivetrain.move_cm(30.48)
+    time.sleep(5)
 
-    while True:
-        drivetrain.update_pid()
+    print("Routine Complete.")
 
-        try:
-            left_pos = drivetrain.get_encoder(Motor.LEFT)
-            right_pos = drivetrain.get_encoder(Motor.RIGHT)
-        except:
-            print("error checking encoders")
-        
-        l_target = int(drivetrain.target_ticks_left)
-        r_target = int(drivetrain.target_ticks_right)
-        
-        print(f"L: {left_pos}/{l_target} | R: {right_pos}/{r_target}")
-        
-        # Loop frequency: 0.05s = 20Hz (Good speed for PID)
-        time.sleep(0.05)
-
-except:
+except KeyboardInterrupt:
     print("\nStopping...")
-    try:
-        drivetrain.stop()
-    except:
-        pass
+
+finally:
+    # Ensure motors stop even if code crashes
+    run_threads = False
+    time.sleep(0.2) # Wait for thread to exit
+    drivetrain.stop()
+    print("Clean exit.")
