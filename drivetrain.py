@@ -60,7 +60,8 @@ class Drivetrain:
         return 0
 
     def stop(self):
-        self.driver.set_motor_power(0, 0)
+        self.driver.set_motor_power(Motor.LEFT, 0)
+        self.driver.set_motor_power(Motor.RIGHT, 0)
 
     def _cm_to_rotations(self, cm):
         circumference = self.wheel_diameter_cm * math.pi
@@ -94,8 +95,12 @@ class Drivetrain:
         delta_ticks = change * self.ticks_per_rev
         if motor == Motor.LEFT:
             self.target_ticks_left += delta_ticks
+            self.integral_left = 0
+            self.last_error_left = 0
         elif motor == Motor.RIGHT:
             self.target_ticks_right += delta_ticks
+            self.integral_right = 0
+            self.last_error_right = 0
 
     def update_pid(self):
         try:
@@ -140,17 +145,13 @@ class Drivetrain:
         
         power_left = 0
         if abs(raw_power_left) > 0:
-            if raw_power_left > 0:
-                power_left = raw_power_left + self.MIN_POWER
-            else:
-                power_left = raw_power_left - self.MIN_POWER
+            sign = 1 if raw_power_left > 0 else -1
+            power_left = sign * max(abs(raw_power_left), self.MIN_POWER)
 
         power_right = 0
         if abs(raw_power_right) > 0:
-            if raw_power_right > 0:
-                power_right = raw_power_right + self.MIN_POWER
-            else:
-                power_right = raw_power_right - self.MIN_POWER
+            sign = 1 if raw_power_right > 0 else -1
+            power_right = sign * max(abs(raw_power_right), self.MIN_POWER)
 
         # Update last error
         self.last_error_left = error_left
@@ -162,4 +163,5 @@ class Drivetrain:
             self.set_motor_power(Motor.RIGHT, int(power_right))
         except:
             return
-        print(f"Left Pos: {current_left}/{self.target_ticks_left}, Right Pos: {current_right}/{self.target_ticks_right}, Power L: {int(power_left)}, Power R: {int(power_right)}")
+        # Uncomment to debug:
+        # print(f"L: {current_left}/{self.target_ticks_left} R: {current_right}/{self.target_ticks_right} PL: {int(power_left)} PR: {int(power_right)}")

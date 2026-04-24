@@ -70,7 +70,7 @@ try:
     time.sleep(1)
     drivetrain.turn_degrees(90)
     run_until_target()
-    time.sleep(5)
+    time.sleep(1)
 
     print("Routine Complete.")
 
