@@ -65,7 +65,8 @@ class Drivetrain:
         return 0
 
     def stop(self):
-        self.driver.set_motor_power(0, 0)
+        self.driver.set_motor_power(Motor.LEFT, 0)
+        self.driver.set_motor_power(Motor.RIGHT, 0)
 
     def _cm_to_rotations(self, cm):
         circumference = self.wheel_diameter_cm * math.pi
@@ -108,8 +109,12 @@ class Drivetrain:
         delta_ticks = change * self.ticks_per_rev
         if motor == Motor.LEFT:
             self.target_ticks_left += delta_ticks
+            self.integral_left = 0
+            self.last_error_left = 0
         elif motor == Motor.RIGHT:
             self.target_ticks_right += delta_ticks
+            self.integral_right = 0
+            self.last_error_right = 0
 
     def update_pid(self):
         try:
