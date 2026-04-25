@@ -19,20 +19,25 @@ class Drivetrain:
     STOP_TOLERANCE = 30
     MAX_INTEGRAL = 20000 # Anti-windup cap
 
+    # Cross-coupled sync gain — penalizes one wheel getting ahead of the other
+    # during straight moves. Set to 0 to disable. Tune up if the bot veers,
+    # down if it fights itself.
+    SYNC_KP = 4.0
+
     def __init__(self, k_constants: dict):
         self.driver = MotorDriver()
-        
+
         self.wheel_diameter_cm = 4.3
-        self.track_width_cm = 16 
+        self.track_width_cm = 16
         self.ticks_per_rev = 1067
-        
+
         self.kp = k_constants.get('kp', 0)
         self.ki = k_constants.get('ki', 0)
         self.kd = k_constants.get('kd', 0)
-        
+
         self.target_ticks_left = 0
         self.target_ticks_right = 0
-        
+
         self.last_error_left = 0
         self.last_error_right = 0
         self.integral_left = 0
@@ -66,28 +71,37 @@ class Drivetrain:
         circumference = self.wheel_diameter_cm * math.pi
         return cm / circumference
 
+    def _reset_pid_state(self):
+        # Stale integral/derivative from a finished move would yank the bot
+        # at the start of the next one.
+        self.last_error_left = 0
+        self.last_error_right = 0
+        self.integral_left = 0
+        self.integral_right = 0
+
     def move_cm(self, distance_cm):
         rotations = self._cm_to_rotations(distance_cm)
         self.change_target_rotation(Motor.LEFT, rotations)
         self.change_target_rotation(Motor.RIGHT, rotations)
+        self._reset_pid_state()
 
     def turn_degrees(self, degrees):
         # Tuning hint: If it turns too far/short, adjust track_width_cm
         turn_circumference = self.track_width_cm * math.pi
         distance_cm = (degrees / 360.0) * turn_circumference
         rotations = self._cm_to_rotations(distance_cm)
-        
+
         self.change_target_rotation(Motor.LEFT, rotations)
         self.change_target_rotation(Motor.RIGHT, -rotations)
+        self._reset_pid_state()
 
     def is_at_target(self, tolerance_ticks=50):
         left_pos = self.get_encoder(Motor.LEFT)
         right_pos = self.get_encoder(Motor.RIGHT)
-        
+
         left_error = abs(self.target_ticks_left - left_pos)
         right_error = abs(self.target_ticks_right - right_pos)
-        
-        # REMOVED THE SLEEP(1) - DO NOT SLEEP IN STATE CHECKS
+
         return left_error <= tolerance_ticks and right_error <= tolerance_ticks
 
     def change_target_rotation(self, motor, change):
@@ -109,12 +123,9 @@ class Drivetrain:
         error_right = self.target_ticks_right - current_right
 
         # --- 1. Deadband / Tolerance Check ---
-        # If we are very close to the target, force error to 0 so motors relax.
-        # This prevents the robot from buzzing back and forth forever.
         if abs(error_left) < self.STOP_TOLERANCE:
             error_left = 0
-            self.integral_left = 0 # Optional: Reset integral to stop drift
-        
+            self.integral_left = 0
         if abs(error_right) < self.STOP_TOLERANCE:
             error_right = 0
             self.integral_right = 0
@@ -122,41 +133,40 @@ class Drivetrain:
         self.integral_left += error_left
         self.integral_right += error_right
 
-        # Integral Anti-Windup (Keep this!)
-        MAX_I = 20000 
-        self.integral_left = max(min(self.integral_left, MAX_I), -MAX_I)
-        self.integral_right = max(min(self.integral_right, MAX_I), -MAX_I)
+        self.integral_left = max(min(self.integral_left, self.MAX_INTEGRAL), -self.MAX_INTEGRAL)
+        self.integral_right = max(min(self.integral_right, self.MAX_INTEGRAL), -self.MAX_INTEGRAL)
 
         derivative_left = error_left - self.last_error_left
         derivative_right = error_right - self.last_error_right
 
-        # Calculate Raw PID output
         raw_power_left = (error_left * self.kp) + (self.integral_left * self.ki) + (derivative_left * self.kd)
         raw_power_right = (error_right * self.kp) + (self.integral_right * self.ki) + (derivative_right * self.kd)
 
-        # --- 2. Apply Minimum Power (Stiction Compensation) ---
-        # If the motor is supposed to move (raw_power is not 0), 
-        # boost it so it actually overcomes friction.
-        
+        # --- 2. Cross-coupled sync (only on straight moves) ---
+        # Without this, each motor PID is independent and one wheel can
+        # outrun the other on uneven floor / battery sag, causing veer.
+        if self.target_ticks_left == self.target_ticks_right:
+            sync_err = current_right - current_left  # +ve = left is behind
+            sync_correction = self.SYNC_KP * sync_err
+            raw_power_left += sync_correction
+            raw_power_right -= sync_correction
+
+        # --- 3. Apply Minimum Power (Stiction Compensation) ---
         power_left = 0
-        if abs(raw_power_left) > 0:
-            if raw_power_left > 0:
-                power_left = raw_power_left + self.MIN_POWER
-            else:
-                power_left = raw_power_left - self.MIN_POWER
+        if raw_power_left > 0:
+            power_left = raw_power_left + self.MIN_POWER
+        elif raw_power_left < 0:
+            power_left = raw_power_left - self.MIN_POWER
 
         power_right = 0
-        if abs(raw_power_right) > 0:
-            if raw_power_right > 0:
-                power_right = raw_power_right + self.MIN_POWER
-            else:
-                power_right = raw_power_right - self.MIN_POWER
+        if raw_power_right > 0:
+            power_right = raw_power_right + self.MIN_POWER
+        elif raw_power_right < 0:
+            power_right = raw_power_right - self.MIN_POWER
 
-        # Update last error
         self.last_error_left = error_left
         self.last_error_right = error_right
 
-        # Send to motors (using existing set_motor_power which handles clamping)
         try:
             self.set_motor_power(Motor.LEFT, int(power_left))
             self.set_motor_power(Motor.RIGHT, int(power_right))
